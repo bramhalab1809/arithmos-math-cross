@@ -1,0 +1,50 @@
+
+name: Build Arithmos Windows EXE
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Extract uploaded ZIP
+        shell: pwsh
+        run: |
+          Expand-Archive -Path "arithmos-math-cross.zip" -DestinationPath "app-source" -Force
+          if (!(Test-Path "app-source/package.json")) {
+            throw "ZIP ke root mein package.json nahi mila."
+          }
+
+      - name: Install dependencies
+        working-directory: app-source
+        run: |
+          npm install
+          npm install --no-save electron electron-builder
+
+      - name: Build application
+        working-directory: app-source
+        run: npm run build
+
+      - name: Create Windows EXE
+        working-directory: app-source
+        run: npx electron-builder --win portable nsis --config electron-builder.json
+
+      - name: Upload EXE files
+        uses: actions/upload-artifact@v4
+        with:
+          name: Arithmos-Windows-EXE
+          path: app-source/release-builds/*.exe
+          if-no-files-found: error
