@@ -1,11 +1,7 @@
-
 name: Build Arithmos Windows EXE
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main
 
 jobs:
   build:
