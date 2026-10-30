@@ -1,0 +1,68 @@
+
+name: Build Arithmos Android APK
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'arithmos-math-cross.zip'
+      - '.github/workflows/build-android-apk.yml'
+    branches:
+      - main
+
+jobs:
+  build-android:
+    name: Build Android APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Extract uploaded ZIP
+        run: |
+          unzip -q arithmos-math-cross.zip -d app-source
+
+      - name: Install dependencies
+        working-directory: app-source
+        run: |
+          npm install --legacy-peer-deps
+          npm install --no-save --legacy-peer-deps @capacitor/core@7 @capacitor/cli@7 @capacitor/android@7
+
+      - name: Build web application
+        working-directory: app-source
+        run: npm run build
+
+      - name: Initialize Android project
+        working-directory: app-source
+        run: |
+          npx cap add android
+          node scripts/generate-icons.mjs
+          npx cap copy android
+
+      - name: Build Android APK
+        working-directory: app-source/android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug
+
+      - name: Upload Android APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Arithmos-Android-APK
+          path: app-source/android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
