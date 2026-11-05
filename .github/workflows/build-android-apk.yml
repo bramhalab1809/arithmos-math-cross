@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       app_id:
-        description: 'Android application ID (example: com.example.questifyca)'
+        description: Android application ID
         required: false
-        default: 'com.bramhalab.questifyca'
+        default: com.bramhalab.questifyca
         type: string
 
 permissions:
@@ -20,7 +20,7 @@ jobs:
 
     env:
       CAPACITOR_APP_ID: ${{ inputs.app_id || 'com.bramhalab.questifyca' }}
-      CAPACITOR_APP_NAME: 'Questify CA'
+      CAPACITOR_APP_NAME: Questify CA
 
     steps:
       - name: Checkout repository
@@ -32,35 +32,43 @@ jobs:
           node-version: '22'
 
       - name: Setup Java 21
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '21'
 
+      # IMPORTANT: Do not request the obsolete Android SDK "tools" package.
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
 
       - name: Install Android SDK packages
-        run: sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+        shell: bash
+        run: |
+          set -euo pipefail
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
 
       - name: Extract app source
         shell: bash
         run: |
           set -euo pipefail
           test -f questify-ca.zip || {
-            echo "ERROR: questify-ca.zip is missing from the repository root."
+            echo "ERROR: questify-ca.zip is missing from repository root."
             exit 1
           }
           mkdir -p app-source
           unzip -q questify-ca.zip -d app-source
           test -f app-source/package.json || {
-            echo "ERROR: package.json was not found at app-source/. Check the ZIP folder structure."
+            echo "ERROR: package.json not found after extracting questify-ca.zip."
             find app-source -maxdepth 3 -type f | head -80
             exit 1
           }
 
       - name: Install dependencies
         working-directory: app-source
+        shell: bash
         run: |
           set -euo pipefail
           if [ -f package-lock.json ]; then
@@ -68,7 +76,10 @@ jobs:
           else
             npm install --legacy-peer-deps
           fi
-          npm install --no-save --legacy-peer-deps @capacitor/core@7 @capacitor/cli@7 @capacitor/android@7
+          npm install --no-save --legacy-peer-deps \
+            @capacitor/core@7 \
+            @capacitor/cli@7 \
+            @capacitor/android@7
 
       - name: Configure Capacitor
         working-directory: app-source
@@ -78,51 +89,70 @@ jobs:
           node <<'NODE'
           const fs = require('fs');
           const path = require('path');
+
           const appId = process.env.CAPACITOR_APP_ID;
           const appName = process.env.CAPACITOR_APP_NAME;
+
           if (!/^[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z][A-Za-z0-9_]*)+$/.test(appId)) {
-            throw new Error(`Invalid Android app ID: ${appId}`);
+            throw new Error(`Invalid Android application ID: ${appId}`);
           }
-          const jsonPath = path.resolve('capacitor.config.json');
-          const tsPath = path.resolve('capacitor.config.ts');
-          const jsPath = path.resolve('capacitor.config.js');
-          const mjsPath = path.resolve('capacitor.config.mjs');
-          if (fs.existsSync(tsPath) || fs.existsSync(jsPath) || fs.existsSync(mjsPath)) {
-            throw new Error('A JavaScript/TypeScript Capacitor config already exists. Add appId, appName and webDir to that existing config instead of generating a competing JSON config.');
+
+          const configPath = path.resolve('capacitor.config.json');
+          const existingConfigFiles = [
+            'capacitor.config.ts',
+            'capacitor.config.js',
+            'capacitor.config.mjs'
+          ];
+
+          const existing = existingConfigFiles.filter(fs.existsSync);
+          if (existing.length) {
+            throw new Error(
+              `Found ${existing.join(', ')}. Add appId, appName and webDir to the existing Capacitor config instead of generating JSON.`
+            );
           }
+
           let config = {};
-          if (fs.existsSync(jsonPath)) config = JSON.parse(fs.readFileSync(jsonPath, 'utf8'));
+          if (fs.existsSync(configPath)) {
+            config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+          }
+
           config.appId = config.appId || appId;
           config.appName = config.appName || appName;
           config.webDir = config.webDir || 'dist';
-          fs.writeFileSync(jsonPath, JSON.stringify(config, null, 2) + '\n');
+
+          fs.writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n');
           console.log('Capacitor config:', config);
           NODE
 
       - name: Build web application
         working-directory: app-source
+        shell: bash
         run: |
           set -euo pipefail
           npm run build
           test -f dist/index.html || {
-            echo "ERROR: dist/index.html not found. Check the Vite build output and Capacitor webDir."
+            echo "ERROR: dist/index.html not found. Check the app's build output directory."
             exit 1
           }
 
       - name: Initialize or sync Android project
         working-directory: app-source
+        shell: bash
         run: |
           set -euo pipefail
           if [ ! -d android ]; then
             npx cap add android
           fi
+
           if [ -f scripts/generate-icons.mjs ]; then
             node scripts/generate-icons.mjs
           fi
+
           npx cap sync android
 
       - name: Build debug APK
         working-directory: app-source/android
+        shell: bash
         run: |
           set -euo pipefail
           chmod +x gradlew
