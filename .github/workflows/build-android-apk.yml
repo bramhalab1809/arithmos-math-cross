@@ -34,7 +34,7 @@ jobs:
 
       - name: Extract uploaded ZIP
         run: |
-          unzip -q arithmos-math-cross.zip -d app-source
+          unzip -q questify-ca.zip -d app-source
           test -f app-source/package.json
 
       - name: Install dependencies
@@ -63,6 +63,6 @@ jobs:
       - name: Upload Android APK
         uses: actions/upload-artifact@v4
         with:
-          name: Arithmos-Android-APK
+          name: quesitfy-Android-APK
           path: app-source/android/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
